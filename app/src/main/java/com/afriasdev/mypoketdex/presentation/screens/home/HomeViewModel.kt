@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import androidx.paging.filter
 import com.afriasdev.mypoketdex.domain.model.Pokemon
 import com.afriasdev.mypoketdex.domain.usecase.GetPokemonListUseCase
 import com.afriasdev.mypoketdex.domain.usecase.SearchPokemonUseCase
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class HomeViewModel(
@@ -27,6 +29,12 @@ class HomeViewModel(
     private val _pokemonPagingFlow = MutableStateFlow<PagingData<Pokemon>>(PagingData.empty())
     val pokemonPagingFlow: StateFlow<PagingData<Pokemon>> = _pokemonPagingFlow.asStateFlow()
 
+    private val _selectedTypes = MutableStateFlow<Set<String>>(emptySet())
+    val selectedTypes: StateFlow<Set<String>> = _selectedTypes.asStateFlow()
+
+    private val _showFilterSheet = MutableStateFlow(false)
+    val showFilterSheet: StateFlow<Boolean> = _showFilterSheet.asStateFlow()
+
     init {
         loadPokemonList()
     }
@@ -39,6 +47,16 @@ class HomeViewModel(
                 getPokemonListUseCase()
                     .distinctUntilChanged()
                     .cachedIn(viewModelScope)
+                    .map { pagingData ->
+                        // Aplicar filtro de tipos si hay tipos seleccionados
+                        if (_selectedTypes.value.isEmpty()) {
+                            pagingData
+                        } else {
+                            pagingData.filter { pokemon ->
+                                pokemon.types.any { it in _selectedTypes.value }
+                            }
+                        }
+                    }
                     .collect { pagingData ->
                         _pokemonPagingFlow.value = pagingData
                         _uiState.value = HomeUiState.Success
@@ -74,7 +92,16 @@ class HomeViewModel(
                 if (results.isEmpty()) {
                     _uiState.value = HomeUiState.EmptySearch(query)
                 } else {
-                    _pokemonPagingFlow.value = PagingData.from(results)
+                    // Aplicar filtros de tipo a los resultados de búsqueda
+                    val filteredResults = if (_selectedTypes.value.isEmpty()) {
+                        results
+                    } else {
+                        results.filter { pokemon ->
+                            pokemon.types.any { it in _selectedTypes.value }
+                        }
+                    }
+
+                    _pokemonPagingFlow.value = PagingData.from(filteredResults)
                     _uiState.value = HomeUiState.Success
                 }
             } catch (e: Exception) {
@@ -87,6 +114,30 @@ class HomeViewModel(
 
     fun onClearSearch() {
         _searchQuery.value = ""
+        loadPokemonList()
+    }
+
+    fun toggleFilterSheet() {
+        _showFilterSheet.value = !_showFilterSheet.value
+    }
+
+    fun dismissFilterSheet() {
+        _showFilterSheet.value = false
+    }
+
+    fun toggleTypeFilter(type: String) {
+        _selectedTypes.value = if (type in _selectedTypes.value) {
+            _selectedTypes.value - type
+        } else {
+            _selectedTypes.value + type
+        }
+
+        // Recargar la lista con los nuevos filtros
+        loadPokemonList()
+    }
+
+    fun clearFilters() {
+        _selectedTypes.value = emptySet()
         loadPokemonList()
     }
 

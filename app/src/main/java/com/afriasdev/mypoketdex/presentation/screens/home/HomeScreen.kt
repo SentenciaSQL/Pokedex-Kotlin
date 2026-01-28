@@ -17,12 +17,17 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CatchingPokemon
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -45,6 +50,7 @@ import com.afriasdev.mypoketdex.presentation.components.ErrorMessage
 import com.afriasdev.mypoketdex.presentation.components.LoadingIndicator
 import com.afriasdev.mypoketdex.presentation.components.PokedexSearchBar
 import com.afriasdev.mypoketdex.presentation.components.PokemonCard
+import com.afriasdev.mypoketdex.presentation.screens.home.components.FilterBottomSheet
 import com.afriasdev.mypoketdex.ui.theme.PokeRed
 import com.afriasdev.mypoketdex.ui.theme.PokeRedDark
 import org.koin.compose.viewmodel.koinViewModel
@@ -53,11 +59,16 @@ import org.koin.compose.viewmodel.koinViewModel
 fun HomeScreen(onPokemonClick: (Int) -> Unit, viewModel: HomeViewModel = koinViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val selectedTypes by viewModel.selectedTypes.collectAsState()
+    val showFilterSheet by viewModel.showFilterSheet.collectAsState()
     val pokemonPagingItems = viewModel.pokemonPagingFlow.collectAsLazyPagingItems()
 
     Scaffold(
         topBar = {
-            HomeTopBar()
+            HomeTopBar(
+                selectedFiltersCount = selectedTypes.size,
+                onFilterClick = viewModel::toggleFilterSheet
+            )
         }
     ) { paddingValues ->
         Column(modifier = Modifier
@@ -71,6 +82,15 @@ fun HomeScreen(onPokemonClick: (Int) -> Unit, viewModel: HomeViewModel = koinVie
                 onClear = viewModel::onClearSearch,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
+
+            // Chips de filtros activos
+            if (selectedTypes.isNotEmpty()) {
+                ActiveFiltersRow(
+                    selectedTypes = selectedTypes,
+                    onClearFilters = viewModel::clearFilters,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
 
             when (uiState) {
                 is HomeUiState.Loading -> {
@@ -118,11 +138,27 @@ fun HomeScreen(onPokemonClick: (Int) -> Unit, viewModel: HomeViewModel = koinVie
             }
         }
     }
+
+    // Bottom Sheet de filtros
+    if (showFilterSheet) {
+        FilterBottomSheet(
+            selectedTypes = selectedTypes,
+            onTypeToggle = viewModel::toggleTypeFilter,
+            onClearFilters = {
+                viewModel.clearFilters()
+                viewModel.dismissFilterSheet()
+            },
+            onDismiss = viewModel::dismissFilterSheet
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeTopBar() {
+fun HomeTopBar(
+    selectedFiltersCount: Int,
+    onFilterClick: () -> Unit
+) {
     TopAppBar(
         title = {
             Row(
@@ -147,6 +183,30 @@ fun HomeTopBar() {
                 )
             }
         },
+        actions = {
+            BadgedBox(
+                badge = {
+                    if (selectedFiltersCount > 0) {
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.secondary
+                        ) {
+                            Text(
+                                text = selectedFiltersCount.toString(),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            ) {
+                IconButton(onClick = onFilterClick) {
+                    Icon(
+                        imageVector = Icons.Default.FilterList,
+                        contentDescription = "Filtros",
+                        tint = Color.White
+                    )
+                }
+            }
+        },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = PokeRed
         ),
@@ -154,6 +214,29 @@ fun HomeTopBar() {
             colors = listOf(PokeRed, PokeRedDark)
         ))
     )
+}
+
+@Composable
+fun ActiveFiltersRow(
+    selectedTypes: Set<String>,
+    onClearFilters: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "${selectedTypes.size} filtro(s) activo(s)",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        TextButton(onClick = onClearFilters) {
+            Text("Limpiar")
+        }
+    }
 }
 
 @Composable

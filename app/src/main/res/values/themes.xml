@@ -3,4 +3,22 @@
     <style name="Theme.MyPoketDex" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
+
+    <!-- Tema del Splash Screen -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Color de fondo del splash -->
+        <item name="windowSplashScreenBackground">@color/poke_red</item>
+
+        <!-- Icono del splash -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+
+        <!-- Duración de la animación del icono -->
+        <item name="windowSplashScreenAnimationDuration">1000</item>
+
+        <!-- Color del icono (opcional) -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/poke_red</item>
+
+        <!-- Post splash screen theme -->
+        <item name="postSplashScreenTheme">@style/Theme.MyPoketDex</item>
+    </style>
 </resources>

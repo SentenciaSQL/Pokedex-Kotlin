@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+
+    <!-- Pokeball Grande -->
+    <!-- Circle Background -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M100,100m-80,0a80,80 0,1 1,160 0a80,80 0,1 1,-160 0" />
+
+    <!-- Top Red Half -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,100 L180,100 A80,80 0 0,0 100,20 A80,80 0 0,0 20,100 Z" />
+
+    <!-- Middle Black Line -->
+    <path
+        android:fillColor="#1D1D1D"
+        android:pathData="M20,95 L180,95 L180,105 L20,105 Z" />
+
+    <!-- Center White Circle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M100,100m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+
+    <!-- Center Black Ring -->
+    <path
+        android:fillColor="#1D1D1D"
+        android:pathData="M100,100m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0" />
+
+    <!-- Center White Inner Circle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M100,100m-15,0a15,15 0,1 1,30 0a15,15 0,1 1,-30 0" />
+</vector>
