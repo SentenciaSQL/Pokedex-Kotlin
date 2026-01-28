@@ -11,6 +11,9 @@ import com.afriasdev.mypoketdex.data.local.entity.PokemonRemoteKeys
 import com.afriasdev.mypoketdex.data.local.entity.toEntity
 import com.afriasdev.mypoketdex.data.mapper.PokemonMapper
 import com.afriasdev.mypoketdex.data.remote.api.PokeApiService
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import timber.log.Timber
 
 @OptIn(ExperimentalPagingApi::class)
@@ -22,6 +25,19 @@ class PokemonRemoteMediator(
     private val pokemonDao = database.pokemonDao()
     private val remoteKeysDao = database.remoteKeysDao()
 
+    override suspend fun initialize(): InitializeAction {
+        // Verificar si tenemos datos en caché
+        val cacheTimeout = System.currentTimeMillis() - (1000 * 60 * 60 * 24) // 24 horas
+
+        return if (pokemonDao.count() > 0) {
+            // Si tenemos datos, no necesitamos refrescar inmediatamente
+            InitializeAction.SKIP_INITIAL_REFRESH
+        } else {
+            // Si no hay datos, hacer refresh inicial
+            InitializeAction.LAUNCH_INITIAL_REFRESH
+        }
+    }
+
     override suspend fun load(
         loadType: LoadType,
         state: PagingState<Int, PokemonEntity>
@@ -30,7 +46,8 @@ class PokemonRemoteMediator(
             val page = when (loadType) {
                 LoadType.REFRESH -> {
                     Timber.d("LoadType.REFRESH")
-                    0
+                    val remoteKeys = getRemoteKeyClosestToCurrentPosition(state)
+                    remoteKeys?.nextKey?.minus(1) ?: 0
                 }
                 LoadType.PREPEND -> {
                     Timber.d("LoadType.PREPEND - returning early")
@@ -41,7 +58,7 @@ class PokemonRemoteMediator(
                     val nextKey = remoteKeys?.nextKey
                     if (nextKey == null) {
                         Timber.d("LoadType.APPEND - no next key, end of pagination")
-                        return MediatorResult.Success(endOfPaginationReached = true)
+                        return MediatorResult.Success(endOfPaginationReached = remoteKeys != null)
                     }
                     Timber.d("LoadType.APPEND - next key: $nextKey")
                     nextKey
@@ -51,6 +68,7 @@ class PokemonRemoteMediator(
             val offset = page * PokeApiService.PAGE_SIZE
             Timber.d("Loading page: $page, offset: $offset")
 
+            // Obtener lista básica
             val response = api.getPokemonList(
                 limit = PokeApiService.PAGE_SIZE,
                 offset = offset
@@ -58,15 +76,19 @@ class PokemonRemoteMediator(
 
             val endOfPaginationReached = response.next == null
 
-            // Obtener detalles de cada pokemon
-            val pokemonList = response.results.mapNotNull { pokemonDto ->
-                try {
-                    val detail = api.getPokemonDetail(pokemonDto.id)
-                    PokemonMapper.toDomain(detail).toEntity()
-                } catch (e: Exception) {
-                    Timber.e(e, "Error loading details for ${pokemonDto.name}")
-                    null
-                }
+            // OPTIMIZACIÓN: Cargar detalles en paralelo usando coroutines
+            val pokemonList = coroutineScope {
+                response.results.map { pokemonDto ->
+                    async {
+                        try {
+                            val detail = api.getPokemonDetail(pokemonDto.id)
+                            PokemonMapper.toDomain(detail).toEntity()
+                        } catch (e: Exception) {
+                            Timber.e(e, "Error loading details for ${pokemonDto.name}")
+                            null
+                        }
+                    }
+                }.awaitAll().filterNotNull()
             }
 
             database.withTransaction {
@@ -106,6 +128,16 @@ class PokemonRemoteMediator(
     ): PokemonRemoteKeys? {
         return state.pages.lastOrNull { it.data.isNotEmpty() }?.data?.lastOrNull()?.let { pokemon ->
             remoteKeysDao.getRemoteKeys(pokemon.id)
+        }
+    }
+
+    private suspend fun getRemoteKeyClosestToCurrentPosition(
+        state: PagingState<Int, PokemonEntity>
+    ): PokemonRemoteKeys? {
+        return state.anchorPosition?.let { position ->
+            state.closestItemToPosition(position)?.id?.let { pokemonId ->
+                remoteKeysDao.getRemoteKeys(pokemonId)
+            }
         }
     }
 }

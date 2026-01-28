@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CatchingPokemon
 import androidx.compose.material.icons.filled.FilterList
@@ -57,10 +59,11 @@ import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun HomeScreen(onPokemonClick: (Int) -> Unit, viewModel: HomeViewModel = koinViewModel()) {
-    val uiState by viewModel.uiState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedTypes by viewModel.selectedTypes.collectAsState()
     val showFilterSheet by viewModel.showFilterSheet.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
     val pokemonPagingItems = viewModel.pokemonPagingFlow.collectAsLazyPagingItems()
 
     Scaffold(
@@ -71,9 +74,11 @@ fun HomeScreen(onPokemonClick: (Int) -> Unit, viewModel: HomeViewModel = koinVie
             )
         }
     ) { paddingValues ->
-        Column(modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
 
             PokedexSearchBar(
                 query = searchQuery,
@@ -92,44 +97,32 @@ fun HomeScreen(onPokemonClick: (Int) -> Unit, viewModel: HomeViewModel = koinVie
                 )
             }
 
-            when (uiState) {
-                is HomeUiState.Loading -> {
+            // Contenido basado en el estado
+            when {
+                // Búsqueda en progreso
+                isSearching -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        LoadingIndicator(message = stringResource(R.string.loading_pokedex))
+                        LoadingIndicator(message = "Buscando Pokémon...")
                     }
                 }
 
-                is HomeUiState.Searching -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        LoadingIndicator(message = stringResource(R.string.loading_search_pokemom))
-                    }
-                }
-
-                is HomeUiState.Error -> {
-                    val error = uiState as HomeUiState.Error
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        ErrorMessage(
-                            message = error.message,
-                            onRetry = viewModel::retry
+                // Resultados de búsqueda disponibles
+                searchResults != null -> {
+                    if (searchResults!!.isEmpty()) {
+                        EmptySearchState(query = searchQuery)
+                    } else {
+                        SearchResultsGrid(
+                            results = searchResults!!,
+                            onPokemonClick = onPokemonClick
                         )
                     }
                 }
 
-                is HomeUiState.EmptySearch -> {
-                    val emptySearch = uiState as HomeUiState.EmptySearch
-                    EmptySearchState(query = emptySearch.query)
-                }
-
-                is HomeUiState.Success -> {
+                // Lista normal con paginación
+                else -> {
                     PokemonGrid(
                         pokemonPagingItems = pokemonPagingItems,
                         onPokemonClick = onPokemonClick
@@ -210,9 +203,11 @@ fun HomeTopBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = PokeRed
         ),
-        modifier = Modifier.background(brush = Brush.horizontalGradient(
-            colors = listOf(PokeRed, PokeRedDark)
-        ))
+        modifier = Modifier.background(
+            brush = Brush.horizontalGradient(
+                colors = listOf(PokeRed, PokeRedDark)
+            )
+        )
     )
 }
 
@@ -240,11 +235,7 @@ fun ActiveFiltersRow(
 }
 
 @Composable
-fun PokemonGrid(
-    pokemonPagingItems: LazyPagingItems<Pokemon>,
-    onPokemonClick: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun SearchResultsGrid(results: List<Pokemon>, onPokemonClick: (Int) -> Unit,  modifier: Modifier = Modifier) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = modifier.fillMaxSize(),
@@ -252,19 +243,57 @@ fun PokemonGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(pokemonPagingItems.itemCount) { index ->
-            pokemonPagingItems[index]?.let { pokemon ->
-                PokemonCard(
-                    pokemon = pokemon,
-                    onClick = { onPokemonClick(pokemon.id) }
-                )
-            }
+        item(span = { GridItemSpan(2) }) {
+            Text(
+                text = "${results.size} resultado(s) encontrado(s)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
         }
 
-        pokemonPagingItems.apply {
-            when {
-                loadState.append is LoadState.Loading -> {
-                    item {
+        items(
+            items = results,
+            key = { pokemon -> pokemon.id }
+        ) { pokemon ->
+            PokemonCard(
+                pokemon = pokemon,
+                onClick = { onPokemonClick(pokemon.id) }
+            )
+        }
+    }
+}
+
+@Composable
+fun PokemonGrid(
+    pokemonPagingItems: LazyPagingItems<Pokemon>,
+    onPokemonClick: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(
+                count = pokemonPagingItems.itemCount,
+                key = { index -> pokemonPagingItems.peek(index)?.id ?: index }
+            ) { index ->
+                pokemonPagingItems[index]?.let { pokemon ->
+                    PokemonCard(
+                        pokemon = pokemon,
+                        onClick = { onPokemonClick(pokemon.id) }
+                    )
+                }
+            }
+
+            // Loading footer
+            when (pokemonPagingItems.loadState.append) {
+                is LoadState.Loading -> {
+                    item(span = { GridItemSpan(2) }) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -279,23 +308,41 @@ fun PokemonGrid(
                     }
                 }
 
-                loadState.append is LoadState.Error -> {
-                    item {
+                is LoadState.Error -> {
+                    item(span = { GridItemSpan(2) }) {
                         ErrorMessage(
                             message = "Error al cargar más Pokémon",
-                            onRetry = { retry() }
+                            onRetry = { pokemonPagingItems.retry() }
                         )
                     }
                 }
 
-                loadState.refresh is LoadState.Error -> {
-                    item {
-                        ErrorMessage(
-                            message = "Error al cargar la lista",
-                            onRetry = { retry() }
-                        )
-                    }
-                }
+                else -> {}
+            }
+        }
+
+        // Loading inicial
+        if (pokemonPagingItems.loadState.refresh is LoadState.Loading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        // Error en refresh
+        if (pokemonPagingItems.loadState.refresh is LoadState.Error) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                ErrorMessage(
+                    message = "Error al cargar Pokémon",
+                    onRetry = { pokemonPagingItems.retry() }
+                )
             }
         }
     }

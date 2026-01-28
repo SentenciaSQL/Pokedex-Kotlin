@@ -8,26 +8,24 @@ import androidx.paging.filter
 import com.afriasdev.mypoketdex.domain.model.Pokemon
 import com.afriasdev.mypoketdex.domain.usecase.GetPokemonListUseCase
 import com.afriasdev.mypoketdex.domain.usecase.SearchPokemonUseCase
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 class HomeViewModel(
     private val getPokemonListUseCase: GetPokemonListUseCase,
     private val searchPokemonUseCase: SearchPokemonUseCase
 ): ViewModel() {
-
-    private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
-    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
-
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
-
-    private val _pokemonPagingFlow = MutableStateFlow<PagingData<Pokemon>>(PagingData.empty())
-    val pokemonPagingFlow: StateFlow<PagingData<Pokemon>> = _pokemonPagingFlow.asStateFlow()
 
     private val _selectedTypes = MutableStateFlow<Set<String>>(emptySet())
     val selectedTypes: StateFlow<Set<String>> = _selectedTypes.asStateFlow()
@@ -35,86 +33,74 @@ class HomeViewModel(
     private val _showFilterSheet = MutableStateFlow(false)
     val showFilterSheet: StateFlow<Boolean> = _showFilterSheet.asStateFlow()
 
-    init {
-        loadPokemonList()
-    }
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
-    private fun loadPokemonList() {
-        viewModelScope.launch {
-            try {
-                _uiState.value = HomeUiState.Loading
+    private val _searchResults = MutableStateFlow<List<Pokemon>?>(null)
+    val searchResults: StateFlow<List<Pokemon>?> = _searchResults.asStateFlow()
 
-                getPokemonListUseCase()
-                    .distinctUntilChanged()
-                    .cachedIn(viewModelScope)
-                    .map { pagingData ->
-                        // Aplicar filtro de tipos si hay tipos seleccionados
-                        if (_selectedTypes.value.isEmpty()) {
-                            pagingData
-                        } else {
-                            pagingData.filter { pokemon ->
-                                pokemon.types.any { it in _selectedTypes.value }
-                            }
-                        }
-                    }
-                    .collect { pagingData ->
-                        _pokemonPagingFlow.value = pagingData
-                        _uiState.value = HomeUiState.Success
-                    }
-            } catch (e: Exception) {
-                _uiState.value = HomeUiState.Error(
-                    e.message ?: "Error desconocido al cargar Pokémon"
-                )
+    // Flow de Pokémon con filtros aplicados
+    val pokemonPagingFlow: StateFlow<PagingData<Pokemon>> = combine(
+        getPokemonListUseCase()
+            .cachedIn(viewModelScope),
+        _selectedTypes
+    ) { pagingData, selectedTypes ->
+        if (selectedTypes.isEmpty()) {
+            pagingData
+        } else {
+            pagingData.filter { pokemon ->
+                pokemon.types.any { it in selectedTypes }
             }
         }
-    }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = PagingData.empty()
+    )
 
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
+        // Si el query está vacío, limpiar resultados de búsqueda
         if (query.isEmpty()) {
-            loadPokemonList()
+            _searchResults.value = null
         }
     }
 
     fun onSearch() {
         val query = _searchQuery.value.trim()
         if (query.isEmpty()) {
-            loadPokemonList()
+            _searchResults.value = null
             return
         }
 
         viewModelScope.launch {
             try {
-                _uiState.value = HomeUiState.Searching
-
+                _isSearching.value = true
                 val results = searchPokemonUseCase(query)
 
-                if (results.isEmpty()) {
-                    _uiState.value = HomeUiState.EmptySearch(query)
+                // Aplicar filtros de tipo a los resultados de búsqueda
+                val filteredResults = if (_selectedTypes.value.isEmpty()) {
+                    results
                 } else {
-                    // Aplicar filtros de tipo a los resultados de búsqueda
-                    val filteredResults = if (_selectedTypes.value.isEmpty()) {
-                        results
-                    } else {
-                        results.filter { pokemon ->
-                            pokemon.types.any { it in _selectedTypes.value }
-                        }
+                    results.filter { pokemon ->
+                        pokemon.types.any { it in _selectedTypes.value }
                     }
-
-                    _pokemonPagingFlow.value = PagingData.from(filteredResults)
-                    _uiState.value = HomeUiState.Success
                 }
+
+                _searchResults.value = filteredResults
+                Timber.d("Search results: ${filteredResults.size}")
             } catch (e: Exception) {
-                _uiState.value = HomeUiState.Error(
-                    e.message ?: "Error al buscar Pokémon"
-                )
+                Timber.e(e, "Error searching pokemon")
+                _searchResults.value = emptyList()
+            } finally {
+                _isSearching.value = false
             }
         }
     }
 
     fun onClearSearch() {
         _searchQuery.value = ""
-        loadPokemonList()
+        _searchResults.value = null
     }
 
     fun toggleFilterSheet() {
@@ -132,17 +118,19 @@ class HomeViewModel(
             _selectedTypes.value + type
         }
 
-        // Recargar la lista con los nuevos filtros
-        loadPokemonList()
+        // Si hay búsqueda activa, re-buscar con los nuevos filtros
+        if (_searchResults.value != null) {
+            onSearch()
+        }
     }
 
     fun clearFilters() {
         _selectedTypes.value = emptySet()
-        loadPokemonList()
-    }
 
-    fun retry() {
-        loadPokemonList()
+        // Si hay búsqueda activa, re-buscar sin filtros
+        if (_searchResults.value != null) {
+            onSearch()
+        }
     }
 }
 

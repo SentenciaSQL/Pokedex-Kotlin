@@ -18,7 +18,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
 
-class PokemonRepositoryImpl(private val api: PokeApiService, private val database: PokedexDatabase): PokemonRepository {
+class PokemonRepositoryImpl(
+    private val api: PokeApiService,
+    private val database: PokedexDatabase
+) : PokemonRepository {
 
     private val pokemonDao = database.pokemonDao()
 
@@ -28,7 +31,9 @@ class PokemonRepositoryImpl(private val api: PokeApiService, private val databas
             config = PagingConfig(
                 pageSize = PokeApiService.PAGE_SIZE,
                 enablePlaceholders = false,
-                prefetchDistance = 3
+                prefetchDistance = 5, // Aumentado para cargar antes
+                initialLoadSize = PokeApiService.PAGE_SIZE * 2, // Carga inicial más grande
+                maxSize = 200 // Limitar items en memoria
             ),
             remoteMediator = PokemonRemoteMediator(
                 api = api,
